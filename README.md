@@ -8,6 +8,7 @@ A Streamlit web application that transcribes audio from YouTube videos or upload
 - 🎧 **AI Music Transcription**: Convert audio to MIDI using Spotify's Basic Pitch model
 - 📄 **Score Generation**: Create PDF musical scores using LilyPond
 - 🔊 **Audio Playback**: Generate and play instrumental versions using FluidSynth
+- 🎤 **Simple Vocal Removal**: `instrumental_app.py` uses ffmpeg to create karaoke tracks
 - 💾 **Multiple Download Options**: MIDI files, PDF scores, and WAV audio
 
 ## Demo
@@ -30,9 +31,10 @@ brew install lilypond fluidsynth
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt-get install lilypond fluidsynth libsndfile1
+sudo apt-get install lilypond fluidsynth libsndfile1 ffmpeg
 ```
 
+FFmpeg is only required for `instrumental_app.py`.
 ### Python Dependencies
 
 ```bash
@@ -87,8 +89,13 @@ Download a General MIDI soundfont (e.g., `FluidR3_GM.sf2`) and place it in the p
    - PDF musical score
    - MIDI file
    - Instrumental WAV audio
+6. **Or run the simpler vocal remover:**
+   ```bash
+   streamlit run instrumental_app.py
+   ```
 
-## Technical Details
+
+
 
 ### Architecture
 
