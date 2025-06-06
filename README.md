@@ -22,6 +22,8 @@ The app processes:
 
 ## Prerequisites
 
+This project has been tested with **Python 3.11**. Spotify's Basic Pitch is currently incompatible with Python 3.12. It is recommended to create the virtual environment with `python3.11 -m venv`.
+
 ### System Dependencies
 
 **macOS:**
@@ -55,7 +57,7 @@ Download a General MIDI soundfont (e.g., `FluidR3_GM.sf2`) and place it in the p
 
 2. **Create virtual environment:**
    ```bash
-   python -m venv .venv
+   python3.11 -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
