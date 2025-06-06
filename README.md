@@ -40,7 +40,7 @@ FFmpeg is only required for `instrumental_app.py`.
 ### Python Dependencies
 
 ```bash
-pip install streamlit basic_pitch music21 pyfluidsynth yt-dlp scipy==1.11.4
+pip install -r requirements.txt
 ```
 
 ### SoundFont
@@ -63,7 +63,7 @@ Download a General MIDI soundfont (e.g., `FluidR3_GM.sf2`) and place it in the p
 
 3. **Install dependencies:**
    ```bash
-   pip install streamlit basic_pitch music21 pyfluidsynth yt-dlp scipy==1.11.4
+   pip install -r requirements.txt
    ```
 
 4. **Install system dependencies:**
@@ -128,13 +128,16 @@ This implementation addresses several compatibility issues:
 
 ### Dependencies Not Working?
 
-```bash
-# Reinstall with specific versions
-pip install "scipy==1.11.4" "basic-pitch[coreml]"
+If you encounter version errors, reinstall everything using:
 
+```bash
+pip install -r requirements.txt
 # For M1/M2 Macs, you might need:
 brew install gfortran
 ```
+
+The requirements file pins `basic-pitch[coreml]` and
+`scikit-learn<=1.5.1` to resolve compatibility issues.
 
 ## Contributing
 
