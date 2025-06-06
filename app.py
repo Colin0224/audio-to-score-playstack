@@ -17,16 +17,14 @@ import os, subprocess, tempfile, uuid, shutil, mimetypes, base64, io
 from pathlib import Path
 
 import streamlit as st
-from basic_pitch.inference import predict
 from music21 import converter
-import pretty_midi
 
 # ---------------------------------------------
 # Helper functions
 # ---------------------------------------------
 
 HERE = Path(__file__).parent
-SOUNDFONT = Path(os.getenv("SOUNDFONT_PATH", "FluidR3_GM.sf2"))
+SOUNDFONT = Path(os.getenv("SOUNDFONT_PATH", HERE / "FluidR3_GM.sf2"))
 
 
 def download_youtube(url: str, out_dir: Path) -> Path:
@@ -55,13 +53,64 @@ def download_youtube(url: str, out_dir: Path) -> Path:
 
 
 def transcribe_audio_to_midi(audio_path: Path, out_dir: Path) -> Path:
-    """Run Basic Pitch → MIDI file using Python API."""
+    """Run Basic Pitch → MIDI file using command line tool or Python API."""
     midi_path = out_dir / "transcription.mid"
     
+    # Try command line tool first (more reliable)
     try:
-        st.write("Running basic-pitch transcription...")
+        cmd = [
+            "basic-pitch",
+            str(out_dir),
+            str(audio_path)
+        ]
         
-        # Use the Python API instead of command line
+        st.write("Running basic-pitch command line tool...")
+        
+        # List files before running
+        files_before = list(out_dir.glob("*"))
+        
+        process = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        
+        if process.returncode != 0:
+            st.warning(f"Command line tool failed: {process.stderr}")
+            raise subprocess.CalledProcessError(process.returncode, cmd, process.stdout, process.stderr)
+        
+        # Look for generated MIDI files with different possible naming patterns
+        possible_names = [
+            audio_path.stem + "_basic_pitch.mid",
+            audio_path.stem + ".mid",
+            "audio_basic_pitch.mid",
+            "audio.mid"
+        ]
+        
+        for name in possible_names:
+            candidate = out_dir / name
+            if candidate.exists():
+                if candidate != midi_path:
+                    candidate.rename(midi_path)
+                st.success(f"Found MIDI file: {name}")
+                return midi_path
+        
+        # If not found by name, look for any new MIDI files
+        files_after = list(out_dir.glob("*.mid")) + list(out_dir.glob("*.midi"))
+        new_files = [f for f in files_after if f not in files_before]
+        
+        if new_files:
+            source_midi = new_files[0]
+            if source_midi != midi_path:
+                source_midi.rename(midi_path)
+            st.success(f"Found MIDI file: {source_midi.name}")
+            return midi_path
+            
+    except Exception as e:
+        st.warning(f"Command line approach failed: {e}")
+        
+    # Fallback: Try Python API
+    try:
+        st.write("Trying Python API approach...")
+        from basic_pitch.inference import predict
+        
+        # Use the Python API without specifying model path (uses default)
         model_output, midi_data, note_events = predict(
             str(audio_path),
             onset_threshold=0.5,
@@ -69,58 +118,18 @@ def transcribe_audio_to_midi(audio_path: Path, out_dir: Path) -> Path:
             minimum_note_length=127.70,  # in milliseconds
             minimum_frequency=32.7,       # Hz (C1)
             maximum_frequency=2093.0,     # Hz (C7)
-            multiple_pitch_bends=False,   # This is the Python API equivalent
-            melodia_trick=True,
-            model_or_model_path=None,     # Use default model
+            multiple_pitch_bends=False,   # Correct parameter name
+            melodia_trick=True
         )
         
         # Save the MIDI data
         midi_data.write(str(midi_path))
-        
-        st.write(f"MIDI file saved to: {midi_path}")
-        
+        st.success("MIDI generated via Python API!")
         return midi_path
         
     except Exception as e:
-        # Fallback to command line tool without the problematic flag
-        st.warning(f"Python API failed ({e}), trying command line tool...")
-        
-        cmd = [
-            "basic-pitch",
-            "--model-serialization", "coreml",  # Force CoreML model
-            "--save-midi",  # Explicitly save MIDI
-            str(out_dir),
-            str(audio_path)
-        ]
-        
-        st.write("Running basic-pitch with CoreML model...")
-        st.write(f"Command: {' '.join(cmd)}")
-        
-        process = subprocess.run(cmd, check=False, capture_output=True, text=True)
-        
-        if process.returncode != 0:
-            st.error(f"Command line tool also failed: {process.stderr}")
-            raise subprocess.CalledProcessError(process.returncode, cmd, process.stdout, process.stderr)
-        
-        # Look for generated MIDI files
-        midi_files = list(out_dir.glob("*.mid")) + list(out_dir.glob("*.midi"))
-        
-        # Basic pitch generates files with the audio filename + _basic_pitch.mid
-        expected_name = audio_path.stem + "_basic_pitch.mid"
-        expected_path = out_dir / expected_name
-        
-        if expected_path.exists():
-            if expected_path != midi_path:
-                expected_path.rename(midi_path)
-            return midi_path
-        elif midi_files:
-            # Use the first MIDI file found
-            source_midi = midi_files[0]
-            if source_midi != midi_path:
-                source_midi.rename(midi_path)
-            return midi_path
-        else:
-            raise FileNotFoundError("No MIDI file generated by basic-pitch")
+        st.error(f"Python API also failed: {e}")
+        raise FileNotFoundError("Could not generate MIDI file using either method")
 
 
 def midi_to_score_pdf(midi_path: Path, out_dir: Path) -> Path | None:
@@ -138,7 +147,8 @@ def midi_to_score_pdf(midi_path: Path, out_dir: Path) -> Path | None:
 
 def render_midi_to_wav(midi_path: Path, out_dir: Path) -> Path | None:
     if not SOUNDFONT.exists():
-        st.warning("Sound‑font (.sf2) not found. Skipping audio rendering.")
+        st.warning(f"Sound‑font not found at {SOUNDFONT}. Skipping audio rendering.")
+        st.info("Download a soundfont like FluidR3_GM.sf2 and place it in the app directory.")
         return None
     wav_path = out_dir / "render.wav"
     cmd = [
@@ -152,10 +162,13 @@ def render_midi_to_wav(midi_path: Path, out_dir: Path) -> Path | None:
         "44100",
     ]
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return wav_path
-    except Exception as e:
-        st.warning(f"FluidSynth rendering failed: {e}")
+    except subprocess.CalledProcessError as e:
+        st.warning(f"FluidSynth rendering failed: {e.stderr}")
+        return None
+    except FileNotFoundError:
+        st.warning("FluidSynth not found. Please install it with: brew install fluidsynth")
         return None
 
 
@@ -204,14 +217,19 @@ if auto_start:
 
             # 2) Transcription
             st.write("🎧 Transcribing audio → MIDI (Basic Pitch)…")
-            midi_path = transcribe_audio_to_midi(audio_path, tmp_dir)
-            st.success("MIDI ready!")
+            try:
+                midi_path = transcribe_audio_to_midi(audio_path, tmp_dir)
+                st.success("✅ MIDI ready!")
+            except Exception as e:
+                st.error(f"Transcription failed: {e}")
+                st.stop()
 
             # 3) Score PDF
             st.write("📄 Engraving score… (needs LilyPond)")
             pdf_path = midi_to_score_pdf(midi_path, tmp_dir)
             if pdf_path and pdf_path.exists():
-                st.download_button("Download score (PDF)", pdf_path.read_bytes(), "score.pdf")
+                with open(pdf_path, "rb") as f:
+                    st.download_button("📥 Download score (PDF)", f.read(), "score.pdf", mime="application/pdf")
 
             # 4) Render WAV for browser playback
             st.write("🔊 Rendering audio… (FluidSynth)")
@@ -219,21 +237,31 @@ if auto_start:
             if wav_path and wav_path.exists():
                 wav_bytes = wav_path.read_bytes()
                 st.audio(wav_bytes, format="audio/wav")
-                st.download_button("Download instrumental (WAV)", wav_bytes, "instrumental.wav")
+                st.download_button("📥 Download instrumental (WAV)", wav_bytes, "instrumental.wav", mime="audio/wav")
             else:
-                st.info("You can still download the raw MIDI file below.")
+                st.info("Audio rendering skipped. You can still download the MIDI file below.")
 
             # 5) Always offer MIDI
-            st.download_button("Download MIDI", midi_path.read_bytes(), "instrumental.mid")
+            if midi_path.exists():
+                with open(midi_path, "rb") as f:
+                    st.download_button("📥 Download MIDI", f.read(), "instrumental.mid", mime="audio/midi")
 
 st.sidebar.title("ℹ️  Help")
 st.sidebar.markdown(
     """
     **Setup tips**
-    1. pip install streamlit basic-pitch music21 pyfluidsynth yt-dlp  
-    2. Install lilypond and fluidsynth from your package manager.  
-    3. Put a sound‑font (e.g., *FluidR3_GM.sf2*) next to *app.py* or set env var SOUNDFONT_PATH.  
-
-    *If LilyPond / Fluidsynth aren't present, the app will still give you a MIDI file.*
+    1. Install Python dependencies:
+       ```
+       pip install streamlit basic-pitch music21 pyfluidsynth yt-dlp
+       ```
+    2. Install system dependencies:
+       - macOS: `brew install lilypond fluidsynth`
+       - Linux: `apt install lilypond fluidsynth`
+    3. Download a soundfont (e.g., [FluidR3_GM.sf2](https://github.com/urish/cinto/blob/master/media/FluidR3%20GM.sf2)) 
+       and place it in the same directory as app.py
+    
+    **Note:** The warnings about scikit-learn and TensorFlow versions are normal and can be ignored.
+    
+    *If LilyPond / FluidSynth aren't present, the app will still give you a MIDI file.*
     """
 )
